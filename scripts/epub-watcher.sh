@@ -26,6 +26,8 @@ move_safe() {
   local src="$1" filename="$2"
   local tmp="$DEST_DIR/.incoming-$filename"
   local dst="$DEST_DIR/$filename"
+  # Self-heal: a removed destination dir would otherwise drop finished books.
+  mkdir -p "$DEST_DIR"
   if mv "$src" "$tmp" 2>/dev/null && mv "$tmp" "$dst" 2>/dev/null; then
     log "Moved: $filename"
   else

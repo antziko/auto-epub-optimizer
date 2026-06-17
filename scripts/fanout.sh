@@ -38,6 +38,13 @@ log "  Copying to: $FANOUT_DESTS"
 log "  Poll interval: ${POLL_INTERVAL}s (stability window ${STABLE_SECS}s)"
 
 while true; do
+  # Self-heal: ensure the staging and destination dirs exist every pass, so a
+  # removed directory can't silently stall the claim/copy below.
+  mkdir -p "$INCOMING_DIR/processing"
+  for dest in $FANOUT_DESTS; do
+    mkdir -p "$dest"
+  done
+
   while IFS= read -r -d '' filepath; do
     filename=$(basename "$filepath")
     staging="$INCOMING_DIR/processing/$filename"

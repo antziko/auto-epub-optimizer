@@ -36,6 +36,11 @@ process_drop_dir() {
   local failed_dir="$watch_dir/failed"
   local filename filepath staging optimizer_args exit_code
 
+  # Self-heal: recreate the working subdirs every pass. They are made at
+  # startup too, but if one is removed later (cleanup, sync) the mv-claim
+  # below would fail silently and files would stall here forever.
+  mkdir -p "$watch_dir" "$processing_dir" "$processed_dir" "$failed_dir"
+
   while IFS= read -r -d '' filepath; do
     filename=$(basename "$filepath")
 
