@@ -55,6 +55,9 @@ class ProcessingOptions:
     filename_format: str = 'author-title'
     # Metadata edits (applied if non-empty)
     metadata_edits: dict = field(default_factory=dict)
+    # Appended to the existing EPUB title, e.g. " (X4)". Propagates to OPF
+    # title metadata and the generated output filename.
+    title_suffix: str = ''
 
 
 @dataclass
@@ -171,6 +174,17 @@ def process_epub(input_path: str, output_path: str,
         # Step 4: Extract metadata
         _progress(10, "Reading metadata...")
         metadata = extract_metadata(opf_tree)
+
+        # Append a device title suffix (e.g. " (X4)") unless the title already
+        # ends with it, so re-runs stay idempotent. Folded into metadata_edits
+        # so the existing edit/filename machinery handles OPF write + filename.
+        if options.title_suffix:
+            base_title = options.metadata_edits.get('title', metadata['title']) or metadata['title']
+            if base_title and not base_title.endswith(options.title_suffix):
+                options.metadata_edits = {
+                    **options.metadata_edits,
+                    'title': f"{base_title}{options.title_suffix}",
+                }
 
         # Step 5: Apply metadata edits
         if options.metadata_edits:

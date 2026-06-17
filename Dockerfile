@@ -7,8 +7,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY cli/optimize.py cli/
 COPY cli/epubkit_pipeline/ cli/epubkit_pipeline/
-COPY scripts/epub-optimizer.sh scripts/load-env.sh scripts/
+COPY scripts/epub-optimizer.sh scripts/load-env.sh scripts/fanout.sh scripts/
 
-RUN chmod +x scripts/epub-optimizer.sh scripts/load-env.sh
+RUN chmod +x scripts/epub-optimizer.sh scripts/load-env.sh scripts/fanout.sh
 
 CMD ["bash", "scripts/epub-optimizer.sh"]

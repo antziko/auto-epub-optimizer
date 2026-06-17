@@ -140,6 +140,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="output filename format derived from EPUB metadata",
     )
     parser.add_argument("--suffix", default="", help="suffix to append before .epub")
+    parser.add_argument(
+        "--title-suffix",
+        default="",
+        help='appended to the EPUB title metadata, e.g. " (X4)"; also flows into the output filename',
+    )
     parser.add_argument("-v", "--verbose", action="store_true", help="print progress and detailed summary")
     parser.add_argument(
         "-n",
@@ -179,6 +184,7 @@ def build_options(args: argparse.Namespace) -> ProcessingOptions:
         text_cleanup=args.text_cleanup,
         normalize_quotes=args.normalize_quotes,
         filename_format=args.filename_format,
+        title_suffix=args.title_suffix,
     )
 
 

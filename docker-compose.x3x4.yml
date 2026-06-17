@@ -1,0 +1,124 @@
+# epub-optimizer — Xteink X3 + X4 dual-device pipeline
+#
+# Drop one .epub into INCOMING_DIR. It is fanned out to two device bookdrops,
+# optimized at each device's resolution, given a distinguishing title suffix,
+# and delivered (along with the untouched original) into your Calibre auto-add
+# folder so all three versions appear in Calibre / OPDS.
+#
+#   incoming ─fanout─┬─► bookdrop-x4 ─[opt 800x480, title " (X4)"]─┐
+#                    └─► bookdrop-x3 ─[opt 528x792, title " (X3)"]─┤
+#                                                                  ▼
+#        original + "Title (X4)" + "Title (X3)"  ──►  CALIBRE_WATCH_FOLDER
+#
+# Run with:
+#   cp .env.x3x4.example .env
+#   # edit .env, then:
+#   docker compose -f docker-compose.x3x4.yml up -d --build
+
+services:
+
+  fanout:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["bash", "scripts/fanout.sh"]
+    environment:
+      EPUB_OPTIMIZER_SUPPRESS_CONFIG_WARNING: "1"
+      INCOMING_DIR: /incoming
+      FANOUT_DESTS: "/bookdrop-x4 /bookdrop-x3"
+      FANOUT_LOG_FILE: /logs/fanout.log
+      POLL_INTERVAL: ${POLL_INTERVAL:-5}
+    volumes:
+      - ${INCOMING_DIR:?Set INCOMING_DIR in .env}:/incoming
+      - ${BOOKDROP_X4_DIR:?Set BOOKDROP_X4_DIR in .env}:/bookdrop-x4
+      - ${BOOKDROP_X3_DIR:?Set BOOKDROP_X3_DIR in .env}:/bookdrop-x3
+      - fanout-logs:/logs
+
+  # --- X4 (800x480): also copies the untouched original into Calibre ---
+  optimizer-x4:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      EPUB_OPTIMIZER_SUPPRESS_CONFIG_WARNING: "1"
+      BOOKDROP_DIR: /bookdrop
+      EPUB_OUTPUT_DIR: /output
+      CALIBRE_WATCH_FOLDER: /calibre
+      EPUB_MAX_WIDTH: "800"
+      EPUB_MAX_HEIGHT: "480"
+      EPUB_TITLE_SUFFIX: " (X4)"
+      OPTIMIZER_PYTHON: python3
+      OPTIMIZER_SCRIPT: /app/cli/optimize.py
+      OPTIMIZER_LOG_FILE: /logs/epub-optimizer-x4.log
+      POLL_INTERVAL: ${POLL_INTERVAL:-5}
+      KEEP_DAYS: ${KEEP_DAYS:-5}
+    volumes:
+      - ${BOOKDROP_X4_DIR:?Set BOOKDROP_X4_DIR in .env}:/bookdrop
+      - ${CALIBRE_WATCH_FOLDER:?Set CALIBRE_WATCH_FOLDER in .env}:/calibre
+      - output-x4:/output
+      - optimizer-x4-logs:/logs
+
+  watcher-x4:
+    build:
+      context: .
+      dockerfile: Dockerfile.watcher
+    restart: unless-stopped
+    environment:
+      EPUB_OPTIMIZER_SUPPRESS_CONFIG_WARNING: "1"
+      EPUB_OUTPUT_DIR: /output
+      WATCHER_DEST_DIR: /destination
+      WATCHER_LOG_FILE: /logs/epub-watcher-x4.log
+    volumes:
+      - output-x4:/output
+      - ${CALIBRE_WATCH_FOLDER:?Set CALIBRE_WATCH_FOLDER in .env}:/destination
+      - watcher-x4-logs:/logs
+
+  # --- X3 (528x792): optimize only, no Calibre original copy ---
+  optimizer-x3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      EPUB_OPTIMIZER_SUPPRESS_CONFIG_WARNING: "1"
+      BOOKDROP_DIR: /bookdrop
+      EPUB_OUTPUT_DIR: /output
+      # No CALIBRE_WATCH_FOLDER -> optimizer skips the original copy (X4 does it)
+      EPUB_MAX_WIDTH: "528"
+      EPUB_MAX_HEIGHT: "792"
+      EPUB_TITLE_SUFFIX: " (X3)"
+      OPTIMIZER_PYTHON: python3
+      OPTIMIZER_SCRIPT: /app/cli/optimize.py
+      OPTIMIZER_LOG_FILE: /logs/epub-optimizer-x3.log
+      POLL_INTERVAL: ${POLL_INTERVAL:-5}
+      KEEP_DAYS: ${KEEP_DAYS:-5}
+    volumes:
+      - ${BOOKDROP_X3_DIR:?Set BOOKDROP_X3_DIR in .env}:/bookdrop
+      - output-x3:/output
+      - optimizer-x3-logs:/logs
+
+  watcher-x3:
+    build:
+      context: .
+      dockerfile: Dockerfile.watcher
+    restart: unless-stopped
+    environment:
+      EPUB_OPTIMIZER_SUPPRESS_CONFIG_WARNING: "1"
+      EPUB_OUTPUT_DIR: /output
+      WATCHER_DEST_DIR: /destination
+      WATCHER_LOG_FILE: /logs/epub-watcher-x3.log
+    volumes:
+      - output-x3:/output
+      - ${CALIBRE_WATCH_FOLDER:?Set CALIBRE_WATCH_FOLDER in .env}:/destination
+      - watcher-x3-logs:/logs
+
+volumes:
+  output-x4:
+  output-x3:
+  fanout-logs:
+  optimizer-x4-logs:
+  optimizer-x3-logs:
+  watcher-x4-logs:
+  watcher-x3-logs:
