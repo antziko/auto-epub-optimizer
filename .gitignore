@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+!.env.x3x4.example
 
 # Logs and runtime files
 logs/
