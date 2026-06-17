@@ -55,11 +55,15 @@ process_drop_dir() {
     fi
 
     # Optionally copy to Calibre's watch folder before processing
-    # (done after the empty-file check so CWA never receives a stub)
+    # (done after the empty-file check so CWA never receives a stub).
+    # Copy to a hidden temp then rename in place so a watcher on the folder
+    # (e.g. Calibre-Web-Automated ingest) never sees a half-written file.
     if [ "$copy_to_calibre" = "1" ] && [ -n "$CALIBRE_WATCH_FOLDER" ]; then
-      if cp "$staging" "$CALIBRE_WATCH_FOLDER/$filename" 2>/dev/null; then
+      calibre_tmp="$CALIBRE_WATCH_FOLDER/.incoming-$filename"
+      if cp "$staging" "$calibre_tmp" 2>/dev/null && mv "$calibre_tmp" "$CALIBRE_WATCH_FOLDER/$filename" 2>/dev/null; then
         log "Copied to Calibre watch folder: $filename"
       else
+        rm -f "$calibre_tmp" 2>/dev/null
         log "WARNING: Could not copy $filename to $CALIBRE_WATCH_FOLDER — continuing anyway"
       fi
     fi
