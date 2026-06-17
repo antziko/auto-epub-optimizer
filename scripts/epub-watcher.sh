@@ -17,6 +17,23 @@ log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
 }
 
+# Publish a finished EPUB into DEST_DIR safely. When DEST_DIR is on a different
+# filesystem than WATCH_DIR, a plain mv is copy+delete and non-atomic, so a
+# consumer watching DEST_DIR (e.g. Calibre-Web-Automated ingest) could pick up a
+# half-written file. Copy to a hidden temp first, then rename within DEST_DIR so
+# the final name appears atomically. Hidden (dot) name is ignored by such watchers.
+move_safe() {
+  local src="$1" filename="$2"
+  local tmp="$DEST_DIR/.incoming-$filename"
+  local dst="$DEST_DIR/$filename"
+  if mv "$src" "$tmp" 2>/dev/null && mv "$tmp" "$dst" 2>/dev/null; then
+    log "Moved: $filename"
+  else
+    rm -f "$tmp" 2>/dev/null
+    log "ERROR moving: $filename"
+  fi
+}
+
 log "epub-watcher started. Watching: $WATCH_DIR"
 log "Moving files to: $DEST_DIR"
 
@@ -25,14 +42,13 @@ for f in "$WATCH_DIR"/*; do
   [ -f "$f" ] || continue
   filename=$(basename "$f")
   log "Found existing file on startup: $filename — moving to $DEST_DIR"
-  mv "$f" "$DEST_DIR/$filename" && log "Moved: $filename" || log "ERROR moving: $filename"
+  move_safe "$f" "$filename"
 done
 
 # Watch for new files using inotifywait
 inotifywait -m -e close_write -e moved_to --format '%f' "$WATCH_DIR" 2>>"$LOG_FILE" |
 while read -r filename; do
   src="$WATCH_DIR/$filename"
-  dst="$DEST_DIR/$filename"
 
   # Ignore hidden temp files and non-EPUB artifacts; the optimizer writes
   # a hidden staging file before atomically renaming the finished book.
@@ -46,5 +62,5 @@ while read -r filename; do
   [ -f "$src" ] || continue
 
   log "Detected new file: $filename — moving to $DEST_DIR"
-  mv "$src" "$dst" && log "Moved: $filename" || log "ERROR moving: $filename"
+  move_safe "$src" "$filename"
 done
