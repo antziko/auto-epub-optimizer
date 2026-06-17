@@ -49,8 +49,11 @@ def repair_html(html_bytes: bytes) -> bytes:
     if tree is None:
         return html_bytes
 
-    # Re-serialize as XHTML
-    result = etree.tostring(tree, encoding='unicode', pretty_print=True, method='html')
+    # Re-serialize as XHTML. method='xml' (not 'html') so void elements such as
+    # <br>, <img>, <hr>, <meta> are emitted self-closed (<br/>) and the output is
+    # well-formed XML. The device's reader uses a strict expat parser (XML_GE=0)
+    # that rejects HTML5-style unclosed void tags with "mismatched tag".
+    result = etree.tostring(tree, encoding='unicode', pretty_print=True, method='xml')
     return result.encode('utf-8')
 
 
