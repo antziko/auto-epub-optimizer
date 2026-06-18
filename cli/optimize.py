@@ -69,6 +69,7 @@ def main() -> int:
 
             final_name = report.output_filename or f"{input_path.stem}.epub"
             final_name = apply_suffix(final_name, args.suffix)
+            final_name = apply_prefix(final_name, args.prefix)
             final_path = unique_path(output_dir / final_name)
             os.replace(temp_path, final_path)
 
@@ -140,6 +141,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="output filename format derived from EPUB metadata",
     )
     parser.add_argument("--suffix", default="", help="suffix to append before .epub")
+    parser.add_argument(
+        "--prefix",
+        default="",
+        help='prepended to the output filename, e.g. "(X4) "; CrossPoint sync strips a "(X<digit>) " prefix',
+    )
     parser.add_argument(
         "--title-suffix",
         default="",
@@ -225,6 +231,12 @@ def apply_suffix(filename: str, suffix: str) -> str:
         return filename
     path = Path(filename)
     return f"{path.stem}{suffix}{path.suffix or '.epub'}"
+
+
+def apply_prefix(filename: str, prefix: str) -> str:
+    if not prefix:
+        return filename
+    return f"{prefix}{filename}"
 
 
 def unique_path(path: Path) -> Path:
