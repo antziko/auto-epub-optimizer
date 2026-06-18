@@ -147,6 +147,11 @@ def build_parser() -> argparse.ArgumentParser:
         help='prepended to the output filename, e.g. "(X4) "; CrossPoint sync strips a "(X<digit>) " prefix',
     )
     parser.add_argument(
+        "--title-prefix",
+        default="",
+        help='prepended to the EPUB title metadata, e.g. "(X4) "; flows into the OPDS title and the Calibre library filename',
+    )
+    parser.add_argument(
         "--title-suffix",
         default="",
         help='appended to the EPUB title metadata, e.g. " (X4)"; also flows into the output filename',
@@ -190,6 +195,7 @@ def build_options(args: argparse.Namespace) -> ProcessingOptions:
         text_cleanup=args.text_cleanup,
         normalize_quotes=args.normalize_quotes,
         filename_format=args.filename_format,
+        title_prefix=args.title_prefix,
         title_suffix=args.title_suffix,
     )
 

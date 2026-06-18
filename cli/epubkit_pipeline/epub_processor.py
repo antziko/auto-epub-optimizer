@@ -55,8 +55,10 @@ class ProcessingOptions:
     filename_format: str = 'author-title'
     # Metadata edits (applied if non-empty)
     metadata_edits: dict = field(default_factory=dict)
-    # Appended to the existing EPUB title, e.g. " (X4)". Propagates to OPF
-    # title metadata and the generated output filename.
+    # Added to the existing EPUB title; both propagate to OPF title metadata
+    # and the generated output filename (and thus the Calibre library filename).
+    # prefix e.g. "(X4) ", suffix e.g. " (X4)".
+    title_prefix: str = ''
     title_suffix: str = ''
 
 
@@ -175,9 +177,18 @@ def process_epub(input_path: str, output_path: str,
         _progress(10, "Reading metadata...")
         metadata = extract_metadata(opf_tree)
 
-        # Append a device title suffix (e.g. " (X4)") unless the title already
-        # ends with it, so re-runs stay idempotent. Folded into metadata_edits
-        # so the existing edit/filename machinery handles OPF write + filename.
+        # Add a device label to the title (prefix "(X4) " or suffix " (X4)")
+        # unless already present, so re-runs stay idempotent. Folded into
+        # metadata_edits so the existing edit/filename machinery handles the
+        # OPF write and the generated output filename (which Calibre also uses
+        # to name the file in its library).
+        if options.title_prefix:
+            base_title = options.metadata_edits.get('title', metadata['title']) or metadata['title']
+            if base_title and not base_title.startswith(options.title_prefix):
+                options.metadata_edits = {
+                    **options.metadata_edits,
+                    'title': f"{options.title_prefix}{base_title}",
+                }
         if options.title_suffix:
             base_title = options.metadata_edits.get('title', metadata['title']) or metadata['title']
             if base_title and not base_title.endswith(options.title_suffix):
