@@ -48,7 +48,7 @@ services:
       CALIBRE_WATCH_FOLDER: /calibre
       EPUB_MAX_WIDTH: "800"
       EPUB_MAX_HEIGHT: "480"
-      EPUB_TITLE_SUFFIX: " (X4)"
+      EPUB_PREFIX: "(X4) "
       OPTIMIZER_PYTHON: python3
       OPTIMIZER_SCRIPT: /app/cli/optimize.py
       OPTIMIZER_LOG_FILE: /logs/epub-optimizer-x4.log
@@ -88,7 +88,7 @@ services:
       # No CALIBRE_WATCH_FOLDER -> optimizer skips the original copy (X4 does it)
       EPUB_MAX_WIDTH: "528"
       EPUB_MAX_HEIGHT: "792"
-      EPUB_TITLE_SUFFIX: " (X3)"
+      EPUB_PREFIX: "(X3) "
       OPTIMIZER_PYTHON: python3
       OPTIMIZER_SCRIPT: /app/cli/optimize.py
       OPTIMIZER_LOG_FILE: /logs/epub-optimizer-x3.log

@@ -87,6 +87,7 @@ process_drop_dir() {
     [ -n "$EPUB_LIGHT_NOVEL" ] && optimizer_args+=("--light-novel")
     [ -n "$EPUB_FILENAME_FORMAT" ] && optimizer_args+=("--filename-format" "$EPUB_FILENAME_FORMAT")
     [ -n "$EPUB_SUFFIX" ] && optimizer_args+=("--suffix=$EPUB_SUFFIX")
+    [ -n "$EPUB_PREFIX" ] && optimizer_args+=("--prefix=$EPUB_PREFIX")
     [ -n "$EPUB_TITLE_SUFFIX" ] && optimizer_args+=("--title-suffix=$EPUB_TITLE_SUFFIX")
 
     "$OPTIMIZER_PYTHON" "$OPTIMIZER_SCRIPT" "${optimizer_args[@]}" "$staging" >> "$LOG_FILE" 2>&1
