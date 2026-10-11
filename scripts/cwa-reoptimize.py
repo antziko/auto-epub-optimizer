@@ -99,17 +99,19 @@ class Host:
                         '--project-directory', a.optimizer_dir]
 
     def calibredb(self, *args):
-        return run(['docker', 'exec', '-u', self.a.cwa_user, self.a.container, 'calibredb', *args,
+        # HOME=/tmp: calibredb wants a writable config dir, and the CWA user can't write /root.
+        return run(['docker', 'exec', '-u', self.a.cwa_user, '-e', 'HOME=/tmp', self.a.container, 'calibredb', *args,
                     f'--library-path={self.a.container_library}'])
 
     def list_books(self):
         res = self.calibredb('list', '--fields', 'id,title,authors,formats', '--for-machine')
-        # calibredb may print notices before the JSON; parse from the first '['.
+        # calibredb may print notices before and after the JSON: decode just the array.
         start = res.stdout.find('[')
         try:
             if start < 0:
                 raise ValueError('no JSON array in output')
-            return json.loads(res.stdout[start:])
+            books, _ = json.JSONDecoder().raw_decode(res.stdout, start)
+            return books
         except ValueError as e:
             sys.exit(f"Could not read the book list from calibredb ({e}).\n"
                      f"stdout: {res.stdout[:600]!r}\nstderr: {res.stderr[:600]!r}")
