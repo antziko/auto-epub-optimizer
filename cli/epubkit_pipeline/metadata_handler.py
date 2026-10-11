@@ -301,11 +301,42 @@ def format_filename(title: str, author: str, filename_format: str = 'author-titl
     # Sanitize: remove/replace problematic characters
     name = _sanitize_filename(name)
 
-    # Limit length (leave room for .epub extension)
-    if len(name) > 200:
-        name = name[:200].rstrip()
+    return truncate_filename_bytes(f"{name}.epub")
 
-    return f"{name}.epub"
+
+# Most Linux filesystems (ext4, and the FAT/exFAT cards these books land on)
+# cap a single filename at 255 *bytes*, not characters.
+MAX_FILENAME_BYTES = 255
+# Room for unique_path()'s dedupe marker, e.g. "-9999".
+DEDUPE_RESERVE_BYTES = 5
+
+
+def truncate_filename_bytes(filename: str,
+                            max_bytes: int = MAX_FILENAME_BYTES,
+                            reserve: int = DEDUPE_RESERVE_BYTES) -> str:
+    """
+    Shorten a filename so it fits the filesystem's per-name byte limit.
+
+    Counting characters is not enough: CJK codepoints are 3 bytes each in UTF-8,
+    so a 100-character Chinese title is 300 bytes and os.replace() fails with
+    ENAMETOOLONG. Only the stem is trimmed, so the .epub extension survives, and
+    the cut lands on a character boundary so no partial UTF-8 sequence is written.
+    """
+    budget = max_bytes - reserve
+    if len(filename.encode('utf-8')) <= budget:
+        return filename
+
+    path = Path(filename)
+    ext = path.suffix
+    stem_budget = budget - len(ext.encode('utf-8'))
+    if stem_budget <= 0:
+        return filename
+
+    encoded = path.stem.encode('utf-8')
+    # errors='ignore' discards a trailing partial multi-byte character.
+    stem = encoded[:stem_budget].decode('utf-8', errors='ignore').rstrip()
+
+    return f"{stem}{ext}"
 
 
 def _sanitize_filename(name: str) -> str:

@@ -23,7 +23,9 @@ from html_cleaner import (
     remove_embedded_fonts_from_css, find_font_files, normalize_whitespace,
     add_chapter_page_breaks, strip_unnecessary_attributes
 )
-from text_cleaner import clean_text_content, TextCleanOptions, TextCleanReport
+from text_cleaner import (
+    clean_text_content, TextCleanOptions, TextCleanReport, is_cjk_language
+)
 from epub_packager import (
     extract_epub, package_epub, remove_os_artifacts, has_drm, find_opf_path
 )
@@ -390,7 +392,14 @@ def process_epub(input_path: str, output_path: str,
         # Step 15: Text content cleanup (85%)
         if options.text_cleanup:
             _progress(85, "Cleaning text content...")
-            text_opts = TextCleanOptions(normalize_quotes=options.normalize_quotes)
+            # A zh/ja/ko dc:language forces CJK handling for every file; anything
+            # else leaves it to per-document detection, which still catches books
+            # with missing or wrong language metadata.
+            cjk_mode = True if is_cjk_language(metadata.get('language', '')) else None
+            text_opts = TextCleanOptions(
+                normalize_quotes=options.normalize_quotes,
+                cjk_mode=cjk_mode,
+            )
             aggregate_report = TextCleanReport()
 
             for xhtml_path in content_files['xhtml']:

@@ -14,6 +14,7 @@ PIPELINE_DIR = Path(__file__).resolve().parent / "epubkit_pipeline"
 sys.path.insert(0, str(PIPELINE_DIR))
 
 from epub_processor import ProcessingOptions, process_epub  # noqa: E402
+from metadata_handler import truncate_filename_bytes  # noqa: E402
 
 
 def main() -> int:
@@ -70,6 +71,9 @@ def main() -> int:
             final_name = report.output_filename or f"{input_path.stem}.epub"
             final_name = apply_suffix(final_name, args.suffix)
             final_name = apply_prefix(final_name, args.prefix)
+            # Re-check after the affixes: they add bytes on top of whatever
+            # format_filename already trimmed to.
+            final_name = truncate_filename_bytes(final_name)
             final_path = unique_path(output_dir / final_name)
             os.replace(temp_path, final_path)
 

@@ -7,6 +7,8 @@ Unicode normalization, punctuation cleanup.
 import re
 import unicodedata
 from dataclasses import dataclass, field
+from typing import Optional
+
 from lxml import etree
 
 
@@ -55,6 +57,11 @@ class TextCleanOptions:
     fix_encoding: bool = True
     fix_punctuation: bool = True
     normalize_unicode: bool = True
+    # CJK handling for quote normalization:
+    #   None  - decide per document from its CJK character density
+    #   True  - always treat as CJK (set from a zh/ja/ko dc:language)
+    #   False - never treat as CJK
+    cjk_mode: Optional[bool] = None
 
 
 # Common OCR ligature/artifact mappings
@@ -77,6 +84,62 @@ SMART_QUOTE_MAP = {
     '\u00a0': ' ',   # non-breaking space
     '\u201a': ',',   # low-9 quote (often misread comma)
 }
+
+# The subset of SMART_QUOTE_MAP that is still safe once the text is CJK.
+# Everything else in that table rewrites standard Chinese/Japanese typography:
+# \u201c \u201d are the normal Simplified Chinese quotation marks (not stylistic curls),
+# \u2026\u2026 is the Chinese ellipsis, and \u2014\u2014 is the Chinese dash. Latinizing them is
+# the same class of damage as replacing English quotes with random glyphs.
+CJK_SAFE_QUOTE_MAP = {
+    '\u00a0': ' ',   # non-breaking space
+}
+
+# Codepoint ranges that mark text as Chinese/Japanese/Korean.
+CJK_RANGES = (
+    (0x3040, 0x30ff),  # Hiragana + Katakana
+    (0x3400, 0x4dbf),  # CJK Unified Ideographs Extension A
+    (0x4e00, 0x9fff),  # CJK Unified Ideographs
+    (0xac00, 0xd7af),  # Hangul Syllables
+    (0xf900, 0xfaff),  # CJK Compatibility Ideographs
+)
+
+# BCP-47 primary subtags whose books should always be treated as CJK.
+CJK_LANGUAGE_TAGS = ('zh', 'ja', 'ko')
+
+
+def is_cjk_language(language: str) -> bool:
+    """Check a dc:language value (e.g. 'zh', 'zh-CN', 'ja-JP') for a CJK tag."""
+    if not language:
+        return False
+    primary = language.strip().lower().replace('_', '-').split('-')[0]
+    return primary in CJK_LANGUAGE_TAGS
+
+
+def has_cjk_content(text: str, threshold: float = 0.05) -> bool:
+    """
+    Report whether enough of `text` is CJK to treat it as CJK typography.
+
+    The threshold is deliberately low. Latin quote normalization is cosmetic,
+    but Latinizing CJK punctuation destroys meaning, so a book with only
+    occasional Chinese passages should still keep its punctuation intact.
+    """
+    if not text:
+        return False
+
+    cjk = 0
+    considered = 0
+    for ch in text:
+        if ch.isspace():
+            continue
+        considered += 1
+        code = ord(ch)
+        if any(lo <= code <= hi for lo, hi in CJK_RANGES):
+            cjk += 1
+
+    if not considered:
+        return False
+
+    return (cjk / considered) >= threshold
 
 # Common mojibake patterns (UTF-8 bytes misinterpreted as Latin-1)
 MOJIBAKE_PATTERNS = {
@@ -118,7 +181,8 @@ def _fix_whitespace(text: str) -> tuple[str, int]:
     return result, count
 
 
-def _fix_ocr_artifacts(text: str, normalize_quotes: bool = True) -> tuple[str, int, int]:
+def _fix_ocr_artifacts(text: str, normalize_quotes: bool = True,
+                       is_cjk: bool = False) -> tuple[str, int, int]:
     """Fix OCR ligature artifacts and optionally normalize smart quotes."""
     lig_count = 0
     quote_count = 0
@@ -130,9 +194,10 @@ def _fix_ocr_artifacts(text: str, normalize_quotes: bool = True) -> tuple[str, i
             text = text.replace(old, new)
             lig_count += n
 
-    # Normalize smart quotes/dashes
+    # Normalize smart quotes/dashes. CJK text keeps its own punctuation.
     if normalize_quotes:
-        for old, new in SMART_QUOTE_MAP.items():
+        quote_map = CJK_SAFE_QUOTE_MAP if is_cjk else SMART_QUOTE_MAP
+        for old, new in quote_map.items():
             if old in text:
                 n = text.count(old)
                 text = text.replace(old, new)
@@ -197,6 +262,12 @@ def clean_text_content(xhtml_bytes: bytes, options: TextCleanOptions = None) -> 
         if tree is None:
             return xhtml_bytes, report
 
+    # Decide CJK handling once for the whole document rather than per text node,
+    # so a stray Latin-only paragraph in a Chinese book is treated consistently.
+    is_cjk = options.cjk_mode
+    if is_cjk is None:
+        is_cjk = has_cjk_content(' '.join(tree.itertext()))
+
     def _process_text(text: str) -> str:
         """Apply all enabled text fixes to a string."""
         nonlocal report
@@ -210,7 +281,7 @@ def clean_text_content(xhtml_bytes: bytes, options: TextCleanOptions = None) -> 
             report.double_spaces_fixed += n
 
         if options.fix_ocr:
-            text, lig_n, quote_n = _fix_ocr_artifacts(text, options.normalize_quotes)
+            text, lig_n, quote_n = _fix_ocr_artifacts(text, options.normalize_quotes, is_cjk)
             report.ocr_ligatures_fixed += lig_n
             report.smart_quotes_normalized += quote_n
 
