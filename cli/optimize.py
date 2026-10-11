@@ -76,6 +76,7 @@ def main() -> int:
             final_name = truncate_filename_bytes(final_name)
             final_path = unique_path(output_dir / final_name)
             os.replace(temp_path, final_path)
+            make_shareable(final_path)
 
             ratio = 0.0
             if report.original_size and report.optimized_size:
@@ -265,6 +266,15 @@ def apply_prefix(filename: str, prefix: str) -> str:
     if not prefix:
         return filename
     return f"{spaced_prefix(prefix)}{filename}"
+
+
+def make_shareable(path: Path) -> None:
+    """Give the output normal file permissions. mkstemp creates 0600, which the move
+    to Calibre's ingest folder preserves, so an importer running as another user
+    (e.g. Calibre-Web-Automated as PUID 1000 while this runs as root) cannot read it."""
+    umask = os.umask(0)
+    os.umask(umask)
+    os.chmod(path, 0o666 & ~umask)
 
 
 def unique_path(path: Path) -> Path:

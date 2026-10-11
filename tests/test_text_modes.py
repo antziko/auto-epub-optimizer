@@ -13,7 +13,7 @@ sys.path.insert(0, str(PROJECT_ROOT / 'cli'))
 
 from epub_processor import strip_optimizer_tag  # noqa: E402
 from image_processor import ImageOptions, classify_image, process_image  # noqa: E402
-from optimize import build_parser, build_options  # noqa: E402
+from optimize import build_parser, build_options, make_shareable  # noqa: E402
 
 
 def _png(img: Image.Image) -> bytes:
@@ -136,6 +136,21 @@ class TitleTagTests(unittest.TestCase):
         opts = build_options(build_parser().parse_args(['in.epub']))
         self.assertEqual((opts.max_width, opts.max_height), (800, 800))
         self.assertTrue(opts.text_modes)
+
+
+class OutputPermissionTests(unittest.TestCase):
+    def test_output_is_readable_by_other_users(self):
+        import os
+        import stat
+        import tempfile
+        # mkstemp makes 0600; the Calibre importer runs as a different user.
+        fd, name = tempfile.mkstemp(suffix='.epub')
+        os.close(fd)
+        try:
+            make_shareable(Path(name))
+            self.assertTrue(os.stat(name).st_mode & stat.S_IROTH)
+        finally:
+            os.unlink(name)
 
 
 if __name__ == '__main__':
