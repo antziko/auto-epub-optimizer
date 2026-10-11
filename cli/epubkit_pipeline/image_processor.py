@@ -1,7 +1,7 @@
 """
-Image processor for Xteink X4 EPUB Optimizer.
+Image processor for Xteink X3/X4 EPUB Optimizer.
 Handles: baseline JPEG conversion, resize, 4-level grayscale quantization,
-contrast boost, Light Novel mode.
+contrast boost, text modes (diagrams/dark screenshots), Light Novel mode.
 
 X4 specs (SSD1677 controller):
   - Display: 800x480, 4-level grayscale (black, dark gray, light gray, white)
@@ -20,6 +20,26 @@ from PIL import Image, ImageEnhance, ImageOps, ImageDraw, ImageFont
 X4_WIDTH = 800
 X4_HEIGHT = 480
 
+# Default image bounds: the long side of either Xteink screen in either orientation
+# (X4 480x800, X3 528x792), so one book serves both; the reader scales down.
+DEFAULT_MAX_WIDTH = 800
+DEFAULT_MAX_HEIGHT = 800
+
+# Text modes. The reader dithers grey to black/white dots, which breaks up small
+# labels on light-grey boxes and turns dark-theme screenshots into noise. Images
+# that are mostly flat background with thin strokes are pushed to pure black and
+# white instead (dark ones inverted first); photos keep the normal grey path.
+# (black point, white point) per kind: grey at or below -> black, at or above -> white.
+# Short steep ramps keep secondary grey text dark; diagrams need the higher white
+# point so light-grey labels survive while box fills (~230+) still go white, and
+# inverted screenshots need the lower one so slightly lighter panels go white
+# instead of dithering over the text.
+TEXT_TONE_POINTS = {
+    'diagram': (150, 215),
+    'dark': (120, 190),
+}
+TEXT_MODE_QUALITY = 85   # higher than default: JPEG ringing around strokes dithers to specks
+
 # Hard limit per X4 JPEG spec
 MAX_IMAGE_DIMENSION = 1024
 
@@ -35,9 +55,10 @@ class ImageOptions:
     contrast_boost: bool = True
     contrast_factor: float = 1.5  # Higher default for 4-level display
     quality: int = 70
-    max_width: int = X4_WIDTH
-    max_height: int = X4_HEIGHT
+    max_width: int = DEFAULT_MAX_WIDTH
+    max_height: int = DEFAULT_MAX_HEIGHT
     eink_quantize: bool = True  # Quantize to 4 gray levels (SSD1677)
+    text_modes: bool = True  # black/white diagrams, inverted dark screenshots
     light_novel_mode: bool = False
     light_novel_rotate_left: bool = True
 
@@ -82,6 +103,48 @@ def _encode_jpeg_bytes(img: Image.Image, quality: int, grayscale: bool) -> bytes
         subsampling=2 if grayscale else 0
     )
     return buffer.getvalue()
+
+
+def classify_image(gray: Image.Image) -> str:
+    """
+    Classify a grayscale image as 'diagram', 'dark' (dark-theme screenshot) or 'photo'.
+
+    Diagrams and screenshots are mostly one flat background tone with thin strokes;
+    photos spread across the mid greys. Measured on a 256px thumbnail for speed.
+    """
+    thumb = gray.copy()
+    thumb.thumbnail((256, 256))
+    hist = thumb.histogram()
+    total = sum(hist) or 1
+    white = sum(hist[230:]) / total
+    dark = sum(hist[:80]) / total
+    mid = sum(hist[90:200]) / total
+    # Share of the most common tone (8-level window): high for flat backgrounds.
+    peak = max(sum(hist[i:i + 8]) for i in range(0, 249)) / total
+
+    if white > 0.55 and mid < 0.18:
+        return 'diagram'
+    if mid >= 0.3 or peak < 0.5:
+        return 'photo'
+    if dark > 0.45:
+        return 'dark'
+    if white > 0.45:
+        return 'diagram'
+    return 'photo'
+
+
+def _flatten_tones(gray: Image.Image, black: int, white: int) -> Image.Image:
+    """Map grey to black/white with a short linear ramp between the two points."""
+    lut = [0 if v <= black else 255 if v >= white else (v - black) * 255 // (white - black)
+           for v in range(256)]
+    return gray.point(lut)
+
+
+def _apply_text_mode(gray: Image.Image, kind: str) -> Image.Image:
+    if kind == 'dark':
+        gray = ImageOps.invert(gray)
+    # No cutoff: with sparse dark strokes, clipping 1% would stretch light fills to black.
+    return _flatten_tones(ImageOps.autocontrast(gray), *TEXT_TONE_POINTS[kind])
 
 
 def _quantize_to_4_levels(img: Image.Image) -> Image.Image:
@@ -228,26 +291,36 @@ def process_image(image_bytes: bytes, filename: str, options: ImageOptions = Non
             resized_for_device = True
 
         # Convert to grayscale
+        text_kind = None
         if options.grayscale:
             current_img = current_img.convert('L')
 
-            # Contrast enhancement (before quantization for best results)
-            if options.contrast_boost:
-                if options.eink_quantize:
-                    # Auto-stretch histogram first for better 4-level mapping
-                    current_img = ImageOps.autocontrast(current_img, cutoff=1)
-                enhancer = ImageEnhance.Contrast(current_img)
-                current_img = enhancer.enhance(options.contrast_factor)
+            if options.text_modes:
+                kind = classify_image(current_img)
+                if kind != 'photo':
+                    text_kind = kind
 
-            # Quantize to 4 e-ink levels with dithering
-            if options.eink_quantize:
-                current_img = _quantize_to_4_levels(current_img)
-                details_parts.append("4-level grayscale")
+            if text_kind:
+                current_img = _apply_text_mode(current_img, text_kind)
+                details_parts.append("inverted black/white" if text_kind == 'dark' else "black/white")
             else:
-                details_parts.append("grayscale")
+                # Contrast enhancement (before quantization for best results)
+                if options.contrast_boost:
+                    if options.eink_quantize:
+                        # Auto-stretch histogram first for better 4-level mapping
+                        current_img = ImageOps.autocontrast(current_img, cutoff=1)
+                    enhancer = ImageEnhance.Contrast(current_img)
+                    current_img = enhancer.enhance(options.contrast_factor)
 
-            if options.contrast_boost:
-                details_parts.append(f"contrast {options.contrast_factor}x")
+                # Quantize to 4 e-ink levels with dithering
+                if options.eink_quantize:
+                    current_img = _quantize_to_4_levels(current_img)
+                    details_parts.append("4-level grayscale")
+                else:
+                    details_parts.append("grayscale")
+
+                if options.contrast_boost:
+                    details_parts.append(f"contrast {options.contrast_factor}x")
 
             # Convert back to RGB for JPEG compatibility
             current_img = current_img.convert('RGB')
@@ -259,12 +332,12 @@ def process_image(image_bytes: bytes, filename: str, options: ImageOptions = Non
             details_parts.append(f"contrast {options.contrast_factor}x")
 
         # Save as baseline JPEG
-        chosen_quality = options.quality
+        chosen_quality = max(options.quality, TEXT_MODE_QUALITY) if text_kind else options.quality
         output_bytes = _encode_jpeg_bytes(current_img, chosen_quality, options.grayscale)
 
         # If a safe source JPEG had to be resized, try lower qualities before
         # accepting a result that's larger than the original.
-        if original_is_safe_jpeg and resized_for_device and len(output_bytes) > original_size:
+        if original_is_safe_jpeg and resized_for_device and not text_kind and len(output_bytes) > original_size:
             best_quality = chosen_quality
             best_output = output_bytes
             for trial_quality in range(max(40, chosen_quality - 5), 34, -5):
@@ -281,7 +354,9 @@ def process_image(image_bytes: bytes, filename: str, options: ImageOptions = Non
 
         # If the original image is already a non-progressive JPEG and did not need
         # resizing for device constraints, keep it when re-encoding makes it bigger.
-        if len(images) == 1 and original_is_safe_jpeg and not resized_for_device and len(output_bytes) > original_size:
+        # Text modes changed the pixels, so the original is never an equivalent.
+        if (len(images) == 1 and original_is_safe_jpeg and not resized_for_device and not text_kind
+                and len(output_bytes) > original_size):
             results.append(ImageResult(
                 output_bytes=image_bytes,
                 new_filename=filename,

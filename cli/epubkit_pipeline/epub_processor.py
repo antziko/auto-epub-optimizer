@@ -1,19 +1,23 @@
 """
-Main EPUB processing pipeline for Xteink X4 Optimizer.
+Main EPUB processing pipeline for Xteink X3/X4 Optimizer.
 Orchestrates all processing steps and generates validation reports.
 """
 
 import os
+import re
 import shutil
 import tempfile
 from pathlib import Path
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Callable, Optional
+
+from urllib.parse import unquote
 
 from lxml import etree
 
 from image_processor import (
-    ImageOptions, process_image, should_process, generate_cover_image
+    ImageOptions, process_image, should_process, generate_cover_image,
+    DEFAULT_MAX_WIDTH, DEFAULT_MAX_HEIGHT
 )
 from metadata_handler import (
     extract_metadata, update_metadata, strip_store_metadata, format_filename
@@ -36,6 +40,17 @@ from epub_structure import (
 )
 
 
+# The optimizer's copy tag: "(x)" now, "(X3)"/"(X4)" from the old per-device copies.
+_LEADING_TAG = re.compile(r'^\((?:x|X[34]?)\) ')
+_TRAILING_TAG = re.compile(r' \((?:x|X[34]?)\)$')
+
+
+def strip_optimizer_tag(title: str) -> str:
+    """Remove a leading "(x) " or trailing " (x)" tag (or a legacy "(X3)"/"(X4)" one)."""
+    stripped = _TRAILING_TAG.sub('', _LEADING_TAG.sub('', title))
+    return stripped or title
+
+
 @dataclass
 class ProcessingOptions:
     """All user-configurable processing options."""
@@ -43,9 +58,10 @@ class ProcessingOptions:
     contrast_boost: bool = True
     contrast_factor: float = 1.5  # Higher default for 4-level display
     quality: int = 70
-    max_width: int = 800
-    max_height: int = 480
+    max_width: int = DEFAULT_MAX_WIDTH
+    max_height: int = DEFAULT_MAX_HEIGHT
     eink_quantize: bool = True  # 4-level grayscale for SSD1677
+    text_modes: bool = True  # black/white diagrams, inverted dark screenshots
     remove_fonts: bool = True
     remove_unused_css: bool = True
     light_novel_mode: bool = False
@@ -59,7 +75,8 @@ class ProcessingOptions:
     metadata_edits: dict = field(default_factory=dict)
     # Added to the existing EPUB title; both propagate to OPF title metadata
     # and the generated output filename (and thus the Calibre library filename).
-    # prefix e.g. "(X4) ", suffix e.g. " (X4)".
+    # prefix e.g. "(x) ", suffix e.g. " (x)". An existing optimizer tag is
+    # replaced rather than stacked (see strip_optimizer_tag).
     title_prefix: str = ''
     title_suffix: str = ''
 
@@ -179,11 +196,19 @@ def process_epub(input_path: str, output_path: str,
         _progress(10, "Reading metadata...")
         metadata = extract_metadata(opf_tree)
 
-        # Add a device label to the title (prefix "(X4) " or suffix " (X4)")
-        # unless already present, so re-runs stay idempotent. Folded into
+        # Add the optimized-copy label to the title (prefix "(x) " or suffix " (x)").
+        # Any existing optimizer tag is stripped first, so re-runs stay idempotent
+        # and an old "(X4) " copy becomes "(x) " instead of "(x) (X4) ". Folded into
         # metadata_edits so the existing edit/filename machinery handles the
         # OPF write and the generated output filename (which Calibre also uses
         # to name the file in its library).
+        if options.title_prefix or options.title_suffix:
+            base_title = options.metadata_edits.get('title', metadata['title']) or metadata['title']
+            if base_title:
+                options.metadata_edits = {
+                    **options.metadata_edits,
+                    'title': strip_optimizer_tag(base_title),
+                }
         if options.title_prefix:
             base_title = options.metadata_edits.get('title', metadata['title']) or metadata['title']
             if base_title and not base_title.startswith(options.title_prefix):
@@ -220,9 +245,15 @@ def process_epub(input_path: str, output_path: str,
             max_width=options.max_width,
             max_height=options.max_height,
             eink_quantize=options.eink_quantize,
+            text_modes=options.text_modes,
             light_novel_mode=options.light_novel_mode,
             light_novel_rotate_left=options.light_novel_rotate_left,
         )
+        # The cover keeps the photo path: an inverted cover would show as a negative.
+        cover_options = replace(image_options, text_modes=False)
+        cover_abs = None
+        if metadata.get('cover_href'):
+            cover_abs = os.path.normpath(os.path.join(os.path.dirname(opf_path), unquote(metadata['cover_href'])))
 
         image_files = content_files['images']
         report.images_total = len(image_files)
@@ -241,7 +272,9 @@ def process_epub(input_path: str, output_path: str,
             if not should_process(img_path):
                 continue
 
-            results = process_image(img_bytes, Path(img_path).name, image_options)
+            is_cover = cover_abs is not None and os.path.normpath(img_path) == cover_abs
+            results = process_image(img_bytes, Path(img_path).name,
+                                    cover_options if is_cover else image_options)
 
             for j, result in enumerate(results):
                 if result.was_converted:

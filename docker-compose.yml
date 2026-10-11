@@ -38,6 +38,7 @@ services:
       EPUB_OPTIMIZER_SUPPRESS_CONFIG_WARNING: "1"
       BOOKDROP_DIR: /bookdrop
       EPUB_OUTPUT_DIR: /output
+      EPUB_TITLE_PREFIX: "${EPUB_TITLE_PREFIX:-}"
       # CALIBRE_WATCH_FOLDER: /calibre  # uncomment if using separate Calibre watch folder and add the volume below
       OPTIMIZER_PYTHON: python3
       OPTIMIZER_SCRIPT: /app/cli/optimize.py

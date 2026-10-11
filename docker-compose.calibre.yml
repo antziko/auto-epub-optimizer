@@ -1,0 +1,62 @@
+# epub-optimizer — Calibre pipeline for Xteink X3 + X4
+#
+# Drop one .epub into INCOMING_DIR. The untouched original and one optimized
+# copy titled "(x) Title" both land in your Calibre auto-add folder, so the two
+# appear side by side in Calibre / OPDS. The optimized copy serves both devices:
+# images are sized for the larger screen and the reader scales them down.
+# CrossPoint and crosspoint-sync strip the "(x) " tag, so the two copies share
+# reading progress.
+#
+#   incoming ─[optimize, title "(x) "]─► output ─[watcher]─┐
+#      └──────────── original copy ────────────────────────┤
+#                                                          ▼
+#                                original + "(x) Title" ──► CALIBRE_WATCH_FOLDER
+#
+# Run with:
+#   cp .env.example .env
+#   # set INCOMING_DIR and CALIBRE_WATCH_FOLDER, then:
+#   docker compose -f docker-compose.calibre.yml up -d --build
+
+services:
+
+  optimizer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      EPUB_OPTIMIZER_SUPPRESS_CONFIG_WARNING: "1"
+      BOOKDROP_DIR: /bookdrop
+      EPUB_OUTPUT_DIR: /output
+      CALIBRE_WATCH_FOLDER: /calibre
+      EPUB_TITLE_PREFIX: "${EPUB_TITLE_PREFIX:-(x) }"
+      OPTIMIZER_PYTHON: python3
+      OPTIMIZER_SCRIPT: /app/cli/optimize.py
+      OPTIMIZER_LOG_FILE: /logs/epub-optimizer.log
+      POLL_INTERVAL: ${POLL_INTERVAL:-5}
+      KEEP_DAYS: ${KEEP_DAYS:-5}
+    volumes:
+      - ${INCOMING_DIR:?Set INCOMING_DIR in .env}:/bookdrop
+      - ${CALIBRE_WATCH_FOLDER:?Set CALIBRE_WATCH_FOLDER in .env}:/calibre
+      - output:/output
+      - optimizer-logs:/logs
+
+  watcher:
+    build:
+      context: .
+      dockerfile: Dockerfile.watcher
+    restart: unless-stopped
+    environment:
+      EPUB_OPTIMIZER_SUPPRESS_CONFIG_WARNING: "1"
+      EPUB_OUTPUT_DIR: /output
+      WATCHER_DEST_DIR: /destination
+      WATCHER_LOG_FILE: /logs/epub-watcher.log
+    volumes:
+      - output:/output
+      - ${CALIBRE_WATCH_FOLDER:?Set CALIBRE_WATCH_FOLDER in .env}:/destination
+      - watcher-logs:/logs
+
+volumes:
+  output:
+  optimizer-logs:
+  watcher-logs:

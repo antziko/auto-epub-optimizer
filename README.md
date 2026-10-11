@@ -18,10 +18,13 @@ Use it in three ways:
 - Optional second drop folder supported for "optimize only" runs that skip the Calibre copy
 - Single-library mode also supported: leave `CALIBRE_WATCH_FOLDER` unset and only the optimized copy is produced
 - Uses the full `epubkit` cleanup pipeline, not only image conversion
+- One optimized copy serves both Xteink X3 and X4: images are sized for the larger screen (800x800 bounds) and the reader scales them down
+- Text modes keep diagrams and screenshots readable on e-ink: light diagrams become pure black and white (light-grey box fills drop out, grey labels go black) and dark-theme screenshots are inverted to black on white. Photos and the cover keep the normal grey path
+- Calibre pipeline (`docker-compose.calibre.yml`): the original and one copy titled `(x) Title` land side by side in Calibre. CrossPoint and crosspoint-sync strip the `(x) ` tag, so both copies share reading progress
 
 # Usage
 
-> Note: The default settings are for the XTEINK X4's 800x480 image bounds. For another device, set `EPUB_MAX_WIDTH` and `EPUB_MAX_HEIGHT` in your config or pass `-W`/`-H` to `cli/optimize.py`.
+> Note: The default 800x800 image bounds cover both Xteink screens (X4 480x800, X3 528x792) in either orientation. For another device, set `EPUB_MAX_WIDTH` and `EPUB_MAX_HEIGHT` in your config or pass `-W`/`-H` to `cli/optimize.py`.
 
 ## Docker Compose
 
@@ -47,6 +50,17 @@ If your `WATCHER_DEST_DIR` is a plain Linux path, you can remove the `epub-watch
 ```bash
 docker compose up -d
 ```
+
+### Calibre pipeline (Xteink X3 + X4)
+
+`docker-compose.calibre.yml` runs one optimizer lane that feeds Calibre directly: drop a book into `INCOMING_DIR` and both the untouched original and the optimized `(x) Title` copy appear in `CALIBRE_WATCH_FOLDER`.
+
+```bash
+# .env: set INCOMING_DIR and CALIBRE_WATCH_FOLDER (EPUB_TITLE_PREFIX defaults to "(x) ")
+docker compose -f docker-compose.calibre.yml up -d --build --remove-orphans
+```
+
+It replaces the earlier per-device X3/X4 lanes, which produced `(X3) ` and `(X4) ` copies. Both files share this directory's Compose project, so `--remove-orphans` also removes the old fanout/X3/X4 containers. The older copies still sync with the original and with `(x) ` copies; delete them from Calibre whenever convenient.
 
 ### Logs
 
@@ -119,7 +133,9 @@ Edit `~/.config/epub-optimizer/.env`:
 | `KEEP_DAYS`            | Days to keep files in `bookdrop/processed/` before auto-deletion (default: `5`)                                                    |
 | `EPUB_QUALITY`         | Optional JPEG quality, default `70`                                                                                                |
 | `EPUB_MAX_WIDTH`       | Optional max image width, default `800`                                                                                            |
-| `EPUB_MAX_HEIGHT`      | Optional max image height, default `480`                                                                                           |
+| `EPUB_MAX_HEIGHT`      | Optional max image height, default `800`                                                                                           |
+| `EPUB_NO_TEXT_MODES`   | Optional - set to `1` to keep diagrams and dark screenshots grey (no black/white, no inversion)                                    |
+| `EPUB_TITLE_PREFIX`    | Optional title tag for the optimized copy, e.g. `(x) ` (a missing trailing space is added)                                         |
 | `EPUB_CONTRAST`        | Optional contrast multiplier, default `1.5`                                                                                        |
 | `EPUB_LIGHT_NOVEL`     | Optional - set to `1` to rotate/split landscape light-novel images                                                                 |
 | `EPUB_FILENAME_FORMAT` | Optional output name pattern: `author-title`, `title-author`, or `title`                                                           |
@@ -244,7 +260,9 @@ The output filename may be normalized from the EPUB's internal metadata or title
 | `--contrast <n>`       | `1.5`          | Contrast multiplier for images            |
 | `--no-eink-quantize`   | -              | Disable 4-level e-ink quantization        |
 | `-W, --max-width <n>`  | `800`          | Max image width in px                     |
-| `-H, --max-height <n>` | `480`          | Max image height in px                    |
+| `-H, --max-height <n>` | `800`          | Max image height in px                    |
+| `--no-text-modes`      | -              | Keep diagrams/dark screenshots grey       |
+| `--title-prefix <str>` | empty          | Title tag for the copy, e.g. `(x) `       |
 | `--light-novel`        | -              | Rotate/split landscape light-novel images |
 | `--no-remove-fonts`    | -              | Keep embedded fonts                       |
 | `--no-remove-css`      | -              | Keep unused CSS                           |
@@ -258,7 +276,7 @@ The output filename may be normalized from the EPUB's internal metadata or title
 
 ### Pipeline
 
-The Python CLI uses the copied `epubkit` pipeline in `cli/epubkit_pipeline/`. It checks for DRM, extracts the EPUB safely, converts images to X4-friendly JPEGs, fixes SVG covers, optionally generates a missing cover, repairs HTML, strips unnecessary attributes, removes unused CSS/fonts, normalizes text and whitespace, cleans store metadata, repairs or generates the TOC, removes OS artifacts, and repackages with the EPUB `mimetype` entry first.
+The Python CLI uses the copied `epubkit` pipeline in `cli/epubkit_pipeline/`. It checks for DRM, extracts the EPUB safely, converts images to e-ink-friendly baseline JPEGs (black/white for diagrams, inverted for dark screenshots, 4-level grey for photos), fixes SVG covers, optionally generates a missing cover, repairs HTML, strips unnecessary attributes, removes unused CSS/fonts, normalizes text and whitespace, cleans store metadata, repairs or generates the TOC, removes OS artifacts, and repackages with the EPUB `mimetype` entry first.
 
 ### Examples
 

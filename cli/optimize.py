@@ -122,8 +122,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="contrast multiplier, e.g. 1.2 or 1.5",
     )
     parser.add_argument("--no-eink-quantize", dest="eink_quantize", action="store_false", help="disable 4-level e-ink quantization")
+    parser.add_argument(
+        "--no-text-modes",
+        dest="text_modes",
+        action="store_false",
+        help="keep diagrams and dark screenshots on the grey path (no black/white, no inversion)",
+    )
     parser.add_argument("-W", "--max-width", type=int, default=800, help="maximum image width in px")
-    parser.add_argument("-H", "--max-height", type=int, default=480, help="maximum image height in px")
+    parser.add_argument("-H", "--max-height", type=int, default=800, help="maximum image height in px")
     parser.add_argument(
         "--split",
         choices=("none", "h-split", "v-split"),
@@ -148,17 +154,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--prefix",
         default="",
-        help='prepended to the output filename, e.g. "(X4) "; CrossPoint sync strips a "(X<digit>) " prefix',
+        help='prepended to the output filename, e.g. "(x) "; CrossPoint sync strips a "(x) " prefix',
     )
     parser.add_argument(
         "--title-prefix",
         default="",
-        help='prepended to the EPUB title metadata, e.g. "(X4) "; flows into the OPDS title and the Calibre library filename',
+        help='prepended to the EPUB title metadata, e.g. "(x) "; flows into the OPDS title and the Calibre library filename',
     )
     parser.add_argument(
         "--title-suffix",
         default="",
-        help='appended to the EPUB title metadata, e.g. " (X4)"; also flows into the output filename',
+        help='appended to the EPUB title metadata, e.g. " (x)"; also flows into the output filename',
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="print progress and detailed summary")
     parser.add_argument(
@@ -171,6 +177,7 @@ def build_parser() -> argparse.ArgumentParser:
         grayscale=True,
         contrast_boost=True,
         eink_quantize=True,
+        text_modes=True,
         remove_fonts=True,
         remove_css=True,
         generate_cover=True,
@@ -190,6 +197,7 @@ def build_options(args: argparse.Namespace) -> ProcessingOptions:
         max_width=args.max_width,
         max_height=args.max_height,
         eink_quantize=args.eink_quantize,
+        text_modes=args.text_modes,
         remove_fonts=args.remove_fonts,
         remove_unused_css=args.remove_css,
         light_novel_mode=args.light_novel or args.split != "none",
@@ -199,8 +207,8 @@ def build_options(args: argparse.Namespace) -> ProcessingOptions:
         text_cleanup=args.text_cleanup,
         normalize_quotes=args.normalize_quotes,
         filename_format=args.filename_format,
-        title_prefix=args.title_prefix,
-        title_suffix=args.title_suffix,
+        title_prefix=spaced_prefix(args.title_prefix),
+        title_suffix=spaced_suffix(args.title_suffix),
     )
 
 
@@ -243,10 +251,20 @@ def apply_suffix(filename: str, suffix: str) -> str:
     return f"{path.stem}{suffix}{path.suffix or '.epub'}"
 
 
+def spaced_prefix(prefix: str) -> str:
+    """Ensure a tag prefix ends in a space: .env parsers trim "(x) " to "(x)",
+    and "(x)Title" is neither readable nor stripped by CrossPoint sync."""
+    return f"{prefix} " if prefix and not prefix.endswith(" ") else prefix
+
+
+def spaced_suffix(suffix: str) -> str:
+    return f" {suffix}" if suffix and not suffix.startswith(" ") else suffix
+
+
 def apply_prefix(filename: str, prefix: str) -> str:
     if not prefix:
         return filename
-    return f"{prefix}{filename}"
+    return f"{spaced_prefix(prefix)}{filename}"
 
 
 def unique_path(path: Path) -> Path:
