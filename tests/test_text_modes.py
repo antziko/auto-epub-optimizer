@@ -132,6 +132,11 @@ class TitleTagTests(unittest.TestCase):
         args = build_parser().parse_args(['in.epub', '--title-prefix=(x) '])
         self.assertEqual(build_options(args).title_prefix, '(x) ')
 
+    def test_cli_title_override(self):
+        opts = build_options(build_parser().parse_args(['in.epub', '--title=From Calibre', '--title-prefix=(x) ']))
+        self.assertEqual(opts.metadata_edits, {'title': 'From Calibre'})
+        self.assertEqual(build_options(build_parser().parse_args(['in.epub'])).metadata_edits, {})
+
     def test_cli_defaults(self):
         opts = build_options(build_parser().parse_args(['in.epub']))
         self.assertEqual((opts.max_width, opts.max_height), (800, 800))
