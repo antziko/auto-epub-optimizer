@@ -86,7 +86,10 @@ def plan(books: list, done_ids: set):
 
 
 def run(cmd, **kw):
-    return subprocess.run(cmd, check=True, text=True, capture_output=True, **kw)
+    res = subprocess.run(cmd, text=True, capture_output=True, **kw)
+    if res.returncode != 0:
+        sys.exit(f"Command failed ({res.returncode}): {' '.join(cmd)}\n{res.stdout[-800:]}{res.stderr[-800:]}")
+    return res
 
 
 class Host:
@@ -100,8 +103,16 @@ class Host:
                     f'--library-path={self.a.container_library}'])
 
     def list_books(self):
-        out = self.calibredb('list', '--fields', 'id,title,authors,formats', '--for-machine').stdout
-        return json.loads(out)
+        res = self.calibredb('list', '--fields', 'id,title,authors,formats', '--for-machine')
+        # calibredb may print notices before the JSON; parse from the first '['.
+        start = res.stdout.find('[')
+        try:
+            if start < 0:
+                raise ValueError('no JSON array in output')
+            return json.loads(res.stdout[start:])
+        except ValueError as e:
+            sys.exit(f"Could not read the book list from calibredb ({e}).\n"
+                     f"stdout: {res.stdout[:600]!r}\nstderr: {res.stderr[:600]!r}")
 
     def host_path(self, container_path: str) -> Path:
         rel = os.path.relpath(container_path, self.a.container_library)
