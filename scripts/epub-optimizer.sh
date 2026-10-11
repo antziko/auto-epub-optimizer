@@ -97,6 +97,8 @@ process_drop_dir() {
 
     if [ $exit_code -eq 0 ]; then
       mv "$staging" "$processed_dir/$filename"
+      # mv keeps the book's original mtime; KEEP_DAYS counts from processing.
+      touch "$processed_dir/$filename"
       log "Done: $filename → $OUTPUT_DIR"
       log "Pruning epubs older than ${KEEP_DAYS} days in $processed_dir..."
       find "$processed_dir" -name "*.epub" -mtime +${KEEP_DAYS} -delete
